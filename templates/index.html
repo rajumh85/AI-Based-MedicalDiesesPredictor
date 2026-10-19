@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Medical Checker</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <main class="container">
+        <header class="page-header">
+            <h1 class="title">🧠 AI Medical Symptom Checker</h1>
+            <p class="subtitle">Enter your symptoms to see possible conditions and basic guidance.</p>
+        </header>
+
+        <section class="result-box info-box" aria-labelledby="how-it-works">
+            <h2 id="how-it-works">ℹ️ How it works</h2>
+            <p>
+                Enter your symptoms or select them from the list below. The AI predicts possible
+                conditions and provides basic advice.
+            </p>
+        </section>
+
+        <form action="/predict" method="POST" class="symptom-form">
+            <section class="form-section" aria-labelledby="symptoms-heading">
+                <h2 id="symptoms-heading">Describe your symptoms</h2>
+                <label class="search-label" for="text-input">Type your symptoms</label>
+                <input
+                    class="search"
+                    id="text-input"
+                    type="text"
+                    name="text_input"
+                    placeholder="For example: fever, headache"
+                >
+
+                <p class="or">Or select symptoms:</p>
+                <div class="grid">
+                    {% for key, label in symptom_data %}
+                    <label class="chip">
+                        <input type="checkbox" name="symptoms" value="{{ key }}">
+                        <span>{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <div class="actions form-actions">
+                <button type="reset" class="btn reset-btn">🧹 Clear</button>
+                <button type="submit" class="btn">Predict</button>
+            </div>
+        </form>
+
+        {% if results %}
+        <section class="result-box" aria-labelledby="diagnosis-heading">
+            <h2 id="diagnosis-heading">🩺 Diagnosis Result</h2>
+            {% for disease, prob in results %}
+            <div class="prediction-item">
+                <span>{{ disease }}</span>
+                <span>{{ prob }}%</span>
+            </div>
+            {% endfor %}
+            <div class="advice">💊 {{ advice }}</div>
+        </section>
+
+        <section class="result-box" aria-labelledby="health-tips-heading">
+            <h2 id="health-tips-heading">💡 General Health Tips</h2>
+            <ul class="tips-list">
+                <li>💧 Stay Hydrated</li>
+                <li>😴 Get Proper Sleep</li>
+                <li>🥗 Eat Healthy Food</li>
+                <li>🏃 Exercise Regularly</li>
+            </ul>
+        </section>
+
+        <section class="result-box" id="aiBox" aria-labelledby="ai-heading">
+            <h2 id="ai-heading">🤖 AI Medical Suggestions</h2>
+            <div id="loader" class="loader" role="status" aria-label="Loading AI advice"></div>
+            <p id="aiText" aria-live="polite">⏳ Generating AI advice...</p>
+            <p class="disclaimer">⚠ Not a medical prescription. Consult a doctor.</p>
+        </section>
+
+        <section class="result-box" aria-labelledby="feedback-heading">
+            <h2 id="feedback-heading">⭐ Feedback</h2>
+            <p class="or">Was this helpful?</p>
+            <div class="actions">
+                <button type="button" class="btn">👍 Yes</button>
+                <button type="button" class="btn reset-btn">👎 No</button>
+            </div>
+        </section>
+
+        <div class="actions">
+            <a href="/" class="btn reset-btn">🔄 New Check</a>
+        </div>
+        {% endif %}
+
+        <footer class="result-box page-footer">
+            <p>Made with ❤️ | AI Medical Checker | For educational purposes only</p>
+        </footer>
+    </main>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const disease = {{ disease | tojson }};
+            const aiText = document.getElementById("aiText");
+
+            if (!aiText || !disease) return;
+
+            function highlightAndScroll() {
+                const box = document.getElementById("aiBox");
+                if (!box) return;
+
+                setTimeout(() => {
+                    box.scrollIntoView({ behavior: "smooth", block: "center" });
+                    box.classList.add("highlight");
+
+                    setTimeout(() => {
+                        box.classList.remove("highlight");
+                    }, 2000);
+                }, 200);
+            }
+
+            function fetchAI() {
+                fetch(`/get_ai_advice?disease=${encodeURIComponent(disease)}`)
+                    .then((response) => {
+                        if (!response.ok) {
+                            throw new Error(`AI advice request failed: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then((data) => {
+                        if (data.advice) {
+                            const loader = document.getElementById("loader");
+                            if (loader) loader.style.display = "none";
+
+                            aiText.innerText = data.advice;
+                            highlightAndScroll();
+                        } else {
+                            setTimeout(fetchAI, 1500);
+                        }
+                    })
+                    .catch((error) => {
+                        console.error(error);
+                        setTimeout(fetchAI, 2000);
+                    });
+            }
+
+            if (aiText.innerText.includes("Generating")) {
+                fetchAI();
+            }
+        });
+    </script>
+</body>
+</html>
