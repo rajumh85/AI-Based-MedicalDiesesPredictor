@@ -72,10 +72,23 @@
             </ul>
         </section>
 
-        <section class="result-box" id="aiBox" aria-labelledby="ai-heading">
+        <section
+            class="result-box"
+            id="aiBox"
+            aria-labelledby="ai-heading"
+            data-ai-job-id="{{ ai_job_id }}"
+        >
             <h2 id="ai-heading">🤖 AI Medical Suggestions</h2>
-            <div id="loader" class="loader" role="status" aria-label="Loading AI advice"></div>
-            <p id="aiText" aria-live="polite">⏳ Generating AI advice...</p>
+            <p class="ai-disclosure">
+                Optional suggestions use a hosted open-source model on Hugging Face. If you
+                continue, only the predicted condition is sent to Hugging Face; your typed
+                symptoms and identity are not sent.
+            </p>
+            <button id="generateAiButton" type="button" class="btn">
+                Generate AI suggestions
+            </button>
+            <div id="loader" class="loader" role="status" aria-label="Loading AI advice" hidden></div>
+            <p id="aiText" aria-live="polite">AI suggestions have not been generated yet.</p>
             <p class="disclaimer">⚠ Not a medical prescription. Consult a doctor.</p>
         </section>
 
@@ -100,53 +113,81 @@
 
     <script>
         document.addEventListener("DOMContentLoaded", function () {
-            const disease = {{ disease | tojson }};
+            const aiBox = document.getElementById("aiBox");
             const aiText = document.getElementById("aiText");
+            const loader = document.getElementById("loader");
+            const generateButton = document.getElementById("generateAiButton");
 
-            if (!aiText || !disease) return;
+            if (!aiBox || !aiText || !loader || !generateButton) return;
 
-            function highlightAndScroll() {
-                const box = document.getElementById("aiBox");
-                if (!box) return;
+            const requestId = aiBox.dataset.aiJobId;
 
-                setTimeout(() => {
-                    box.scrollIntoView({ behavior: "smooth", block: "center" });
-                    box.classList.add("highlight");
-
-                    setTimeout(() => {
-                        box.classList.remove("highlight");
-                    }, 2000);
-                }, 200);
+            function showError(message) {
+                loader.hidden = true;
+                aiText.textContent = message;
+                generateButton.disabled = false;
             }
 
-            function fetchAI() {
-                fetch(`/get_ai_advice?disease=${encodeURIComponent(disease)}`)
-                    .then((response) => {
-                        if (!response.ok) {
-                            throw new Error(`AI advice request failed: ${response.status}`);
-                        }
-                        return response.json();
-                    })
+            function readResponse(response) {
+                return response.json().then((data) => {
+                    if (!response.ok) {
+                        throw new Error(data.error || "The AI request failed. Try again.");
+                    }
+                    return data;
+                });
+            }
+
+            function pollForAdvice() {
+                fetch(`/get_ai_advice/${encodeURIComponent(requestId)}`)
+                    .then(readResponse)
                     .then((data) => {
-                        if (data.advice) {
-                            const loader = document.getElementById("loader");
-                            if (loader) loader.style.display = "none";
-
-                            aiText.innerText = data.advice;
-                            highlightAndScroll();
-                        } else {
-                            setTimeout(fetchAI, 1500);
+                        if (data.status === "generating") {
+                            setTimeout(pollForAdvice, 1000);
+                            return;
                         }
+
+                        loader.hidden = true;
+                        if (data.status === "completed") {
+                            aiText.textContent = data.advice;
+                            aiBox.scrollIntoView({ behavior: "smooth", block: "center" });
+                            aiBox.classList.add("highlight");
+                            setTimeout(() => aiBox.classList.remove("highlight"), 2000);
+                            return;
+                        }
+
+                        showError(data.error || "AI generation failed. Try again.");
                     })
-                    .catch((error) => {
-                        console.error(error);
-                        setTimeout(fetchAI, 2000);
-                    });
+                    .catch((error) => showError(error.message));
             }
 
-            if (aiText.innerText.includes("Generating")) {
-                fetchAI();
-            }
+            generateButton.addEventListener("click", function () {
+                if (!requestId) {
+                    showError("This result has expired. Run a new symptom check.");
+                    return;
+                }
+
+                generateButton.disabled = true;
+                loader.hidden = false;
+                aiText.textContent = "Connecting to Hugging Face for AI suggestions...";
+
+                fetch(`/generate_ai_advice/${encodeURIComponent(requestId)}`, {
+                    method: "POST",
+                })
+                    .then(readResponse)
+                    .then((data) => {
+                        if (data.status === "completed") {
+                            return fetch(`/get_ai_advice/${encodeURIComponent(requestId)}`)
+                                .then(readResponse)
+                                .then((result) => {
+                                    loader.hidden = true;
+                                    aiText.textContent = result.advice;
+                                });
+                        }
+                        aiText.textContent = "Generating AI suggestions...";
+                        pollForAdvice();
+                    })
+                    .catch((error) => showError(error.message));
+            });
         });
     </script>
 </body>
